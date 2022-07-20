@@ -35,14 +35,25 @@ export class ChannelMain {
 
   #parked = new Map<string, ResolveFn>();
 
-  constructor(url: string, data: any) {
-    const worker = new Worker(url);
+  constructor(url: string, data: unknown) {
+    const initWorker = (worker: Worker) => {
+      this.#handleEventsFromWorker(worker);
+      const msg = { type: 'init', data: data } as Message;
+      worker.postMessage(msg);
+    };
 
-    this.#handleEventsFromWorker(worker);
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const msg = { type: 'init', data: data } as Message;
-    worker.postMessage(msg);
+    if (url.startsWith('http')) {
+      const req = new XMLHttpRequest();
+      req.open('get', url, true);
+      req.onload = () => {
+        const worker = new Worker(URL.createObjectURL(new Blob([req.responseText])));
+        initWorker(worker);
+      };
+      req.send();
+    } else {
+      const worker = new Worker(url);
+      initWorker(worker);
+    }
 
     ({ resolve: this.resolve, promise: this.initialised } = promiseHandles());
   }

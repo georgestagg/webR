@@ -1,6 +1,5 @@
 const fs = require('fs/promises');
 const { Worker } = require('node:worker_threads');
-
 globalThis.Worker = Worker;
 
 const sourceFile = process.argv[2];
@@ -13,7 +12,8 @@ if (!sourceFile) {
     args.splice(0, 3);
     let l = 0;
 
-    const { WebR } = require(`../dist/webr.js`);
+    const { WebR } = await import(`../dist/webr.mjs`);
+
     const webR = new WebR({
         RArgs: args,
     });

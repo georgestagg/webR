@@ -3,12 +3,13 @@ import { Message } from './chan/message';
 import { FSNode, WebROptions } from './utils';
 import { createRProxy, RProxy, isRProxy } from './proxy';
 import { RTargetType, RCodeObj } from './sexp';
+import { BASE_URL } from './config';
 
 export class WebR {
   #chan;
 
   constructor(options: WebROptions = {}) {
-    this.#chan = new ChannelMain('./webr-worker.js', options);
+    this.#chan = new ChannelMain(`${BASE_URL}webr-worker.js`, options);
   }
 
   async init() {

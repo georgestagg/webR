@@ -1,7 +1,7 @@
 const esbuild = require('esbuild');
 const cssModulesPlugin = require('esbuild-css-modules-plugin');
 
-function build({ input, output, minify }) {
+function build({ input, output, platform, minify }) {
   esbuild.build({
     entryPoints: [`${input}`],
     bundle: true,
@@ -10,7 +10,9 @@ function build({ input, output, minify }) {
     sourcemap: true,
     outfile: `../dist/${output}`,
     logLevel: 'info',
-    platform: 'node',
+    platform: platform,
+    mainFields: ['main', 'module'],
+    external: ['worker_threads', 'path', 'fs'],
     assetNames: 'assets/[name]-[hash]',
     loader: {
       '.jpg': 'file',
@@ -29,21 +31,25 @@ function build({ input, output, minify }) {
   {
     input: "webR/webr-worker.ts",
     output: "../dist/webr-worker.js",
+    platform: 'node',
     minify: false,
   },
   {
     input: "webR/webr-main.ts",
-    output: "webr.js",
+    output: "webr.mjs",
+    platform: 'neutral',
     minify: false,
   },
   {
     input: "repl/repl.ts",
-    output: "../dist/repl.js",
+    output: "../dist/repl.mjs",
+    platform: 'neutral',
     minify: true,
   },
   {
     input: "console/console.ts",
-    output: "../dist/console.js",
+    output: "../dist/console.mjs",
+    platform: 'neutral',
     minify: true,
   },
 ].map(build);
