@@ -79,12 +79,16 @@ export class ChannelMain {
   }
 
   #handleEventsFromWorker(worker: Worker) {
-    worker.onmessage = async (ev: MessageEvent) => {
-      if (!ev || !ev.data || !ev.data.type) {
+    const onmessage = async (ev: MessageEvent) => {
+      let evMsg = ev.data as Message;
+      if (IN_NODE) {
+        evMsg = ev;
+      }
+      if (!ev || !evMsg || !evMsg.type) {
         return;
       }
 
-      switch (ev.data.type) {
+      switch (evMsg.type) {
         case 'resolve':
           this.resolve();
           return;
@@ -94,11 +98,11 @@ export class ChannelMain {
           return;
 
         default:
-          this.outputQueue.put(ev.data as Message);
+          this.outputQueue.put(evMsg);
           return;
 
         case 'sync-request': {
-          const msg = ev.data as SyncRequest;
+          const msg = evMsg as SyncRequest;
           const payload = msg.data.msg;
           const reqData = msg.data.reqData;
 
@@ -118,15 +122,31 @@ export class ChannelMain {
           );
       }
     };
+    if (IN_NODE) {
+      (worker as Worker & { on: (t: string, cb: (ev: MessageEvent) => Promise<void>) => void }).on(
+        'message',
+        onmessage
+      );
+    } else {
+      worker.onmessage = onmessage;
+    }
   }
 }
 
 // Worker --------------------------------------------------------------
 
 import { SyncTask } from './task-worker';
+import { IN_NODE } from '../compat';
 
 export class ChannelWorker {
-  #ep = globalThis as Endpoint;
+  #ep: Endpoint;
+
+  constructor() {
+    this.#ep = globalThis as Endpoint;
+    if (IN_NODE) {
+      this.#ep = require('worker_threads').parentPort as Endpoint;
+    }
+  }
 
   resolve() {
     this.write({ type: 'resolve' });

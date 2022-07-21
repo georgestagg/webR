@@ -1,0 +1,150 @@
+Index: R-4.1.3/src/library/tools/R/testing.R
+===================================================================
+--- R-4.1.3.orig/src/library/tools/R/testing.R
++++ R-4.1.3/src/library/tools/R/testing.R
+@@ -195,6 +195,11 @@ Rdiff <- function(from, to, useDiff = FA
+     }
+     clean2 <- function(txt)
+     {
++        # Remove extra newlines inserted during emscripten testing
++        if(R.version$os == "emscripten"){
++            txt <- txt[which(txt!="")]
++            txt <- txt[which(txt!="> ")]
++        }
+         eoh <- grep("^> options\\(warn = 1\\)$", txt)
+         if(length(eoh)) txt[-(1L:eoh[1L])] else txt
+     }
+@@ -244,7 +249,9 @@ Rdiff <- function(from, to, useDiff = FA
+             status <- system2("diff", c("-bw", shQuote(a), shQuote(b)),
+                               stdout = tf, stderr = tf)
+             list(status = status, out = c(out, readLines(tf)))
+-        } else system(paste("diff -bw", shQuote(a), shQuote(b)))
++        } else if(R.version$os != "emscripten"){
++            system(paste("diff -bw", shQuote(a), shQuote(b)))
++        } else 1L
+     }
+ } ## {Rdiff}
+ 
+@@ -302,6 +309,20 @@ testInstalledPackages <-
+     invisible(status)
+ }
+ 
++internal_runR <- function(Rfile, outfile)
++{
++    con <- file(outfile, open = "wt")
++    sink(con)
++    sink(con, type = "message")
++    tryCatch({
++        source(Rfile, echo=TRUE, max.deparse.length=10000)
++        0L
++    }, finally={
++        sink(type = "message")
++        sink()
++    })
++}
++
+ testInstalledPackage <-
+     function(pkg, lib.loc = NULL, outDir = ".",
+              types = c("examples", "tests", "vignettes"),
+@@ -323,15 +344,18 @@ testInstalledPackage <-
+             savefile <- paste0(outfile, ".prev")
+             if (file.exists(outfile)) file.rename(outfile, savefile)
+             unlink(failfile)
+-            ## Create as .fail in case this R session gets killed
+-            cmd <- paste(shQuote(file.path(R.home("bin"), "R")),
+-                         "CMD BATCH --vanilla --no-timing", Ropts,
+-                         shQuote(Rfile), shQuote(failfile))
+-            if (.Platform$OS.type == "windows") Sys.setenv(R_LIBS="")
+-            else cmd <- paste("R_LIBS=", cmd)
+-            res <- system(cmd)
++            if(R.version$os == "emscripten"){
++                res <- internal_runR(Rfile, failfile)
++            } else {
++                ## Create as .fail in case this R session gets killed
++                cmd <- paste(shQuote(file.path(R.home("bin"), "R")),
++                            "CMD BATCH --vanilla --no-timing", Ropts,
++                            shQuote(Rfile), shQuote(failfile))
++                if (.Platform$OS.type == "windows") Sys.setenv(R_LIBS="")
++                else cmd <- paste("R_LIBS=", cmd)
++                res <- system(cmd)
++            }
+             if (res) return(invisible(1L)) else file.rename(failfile, outfile)
+-
+             savefile <- paste0(outfile, ".save")
+             if (!is.null(srcdir)) savefile <- file.path(srcdir, savefile)
+             else {
+@@ -344,10 +368,16 @@ testInstalledPackage <-
+                    message(gettextf("  comparing %s to %s ...",
+                                     sQuote(outfile), sQuote(basename(savefile))),
+                            appendLF = FALSE, domain = NA)
+-                   cmd <-
+-                       sprintf("invisible(tools::Rdiff('%s','%s',TRUE,TRUE))",
+-                               outfile, savefile)
+-                   out <- R_runR(cmd, "--vanilla --no-echo")
++                   if(R.version$os == "emscripten"){
++                       if(Rdiff(outfile,savefile,FALSE,TRUE) != 0)
++                           out <- 'Files differ'
++                       else out <- character(0)
++                   } else {
++                       cmd <-
++                           sprintf("invisible(tools::Rdiff('%s','%s',TRUE,TRUE))",
++                                   outfile, savefile)
++                       out <- R_runR(cmd, "--vanilla --no-echo")
++                   }
+                    if(length(out)) {
+                        if(strict)
+                            message(" ERROR")
+@@ -367,10 +397,16 @@ testInstalledPackage <-
+                     message(gettextf("  comparing %s to %s ...",
+                             sQuote(outfile), sQuote(basename(prevfile))),
+                             appendLF = FALSE, domain = NA)
+-                    cmd <-
+-                        sprintf("invisible(tools::Rdiff('%s','%s',TRUE,TRUE))",
+-                                outfile, prevfile)
+-                    out <- R_runR(cmd, "--vanilla --no-echo")
++                    if(R.version$os == "emscripten"){
++                       if(Rdiff(outfile,prevfile,FALSE,TRUE) != 0)
++                           out <- 'Files differ'
++                       else out <- character(0)
++                    } else {
++                        cmd <-
++                            sprintf("invisible(tools::Rdiff('%s','%s',TRUE,TRUE))",
++                                    outfile, prevfile)
++                        out <- R_runR(cmd, "--vanilla --no-echo")
++                    }
+                     if(length(out)) {
+                         message(" NOTE")
+                         writeLines(paste0("  ", out))
+@@ -390,7 +426,8 @@ testInstalledPackage <-
+         unlink(this, recursive = TRUE)
+         dir.create(this)
+         ## system(paste("cp -pR", file.path(d, "*"), this))
+-        file.copy(Sys.glob(file.path(d, "*")), this, recursive = TRUE)
++        file.copy(Sys.glob(file.path(d, "*")), this, recursive = TRUE,
++                  copy.mode = FALSE)
+         setwd(this)
+         message(gettextf("Running specific tests for package %s",
+                          sQuote(pkg)), domain = NA)
+@@ -398,12 +435,16 @@ testInstalledPackage <-
+         for(f in Rfiles) {
+             message(gettextf("  Running %s", sQuote(f)), domain = NA)
+             outfile <- sub("rout$", "Rout", paste0(f, "out"))
+-            cmd <- paste(shQuote(file.path(R.home("bin"), "R")),
+-                         "CMD BATCH --vanilla --no-timing", Ropts,
+-                         shQuote(f), shQuote(outfile))
+-            cmd <- if (.Platform$OS.type == "windows") paste(cmd, "LANGUAGE=C")
+-            else paste("LANGUAGE=C", cmd)
+-           res <- system(cmd)
++            if(R.version$os == "emscripten"){
++                res <- internal_runR(f, outfile)
++            } else {
++                cmd <- paste(shQuote(file.path(R.home("bin"), "R")),
++                             "CMD BATCH --vanilla --no-timing", Ropts,
++                             shQuote(f), shQuote(outfile))
++                cmd <- if (.Platform$OS.type == "windows") paste(cmd, "LANGUAGE=C")
++                else paste("LANGUAGE=C", cmd)
++                res <- system(cmd)
++            }
+             if (res) {
+                 file.rename(outfile, paste0(outfile, ".fail"))
+                 return(invisible(1L))

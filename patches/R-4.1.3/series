@@ -15,3 +15,5 @@ tre-fix-rf_error-args.diff
 emscripten-disable-bcEval.diff
 emscripten-xhr-download.diff
 eval-r-code.diff
+emscripten-quit.diff
+emscripten-package-testing.diff

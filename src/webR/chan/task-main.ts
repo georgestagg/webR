@@ -5,6 +5,8 @@ import { Endpoint, SZ_BUF_FITS_IDX, SZ_BUF_SIZE_IDX, generateUUID } from './task
 import { sleep } from '../utils';
 import { SyncRequestData } from './message';
 
+import { IN_NODE } from '../compat';
+
 const encoder = new TextEncoder();
 
 /**
@@ -60,13 +62,25 @@ function requestResponseMessage(ep: Endpoint): [string, Promise<any>] {
   return [
     id,
     new Promise((resolve) => {
-      ep.addEventListener('message', function l(ev: MessageEvent) {
-        if (!ev.data || !ev.data.id || ev.data.id !== id) {
-          return;
-        }
-        ep.removeEventListener('message', l as EventListenerOrEventListenerObject);
-        resolve(ev.data);
-      } as EventListenerOrEventListenerObject);
+      if (IN_NODE) {
+        (ep as Worker & { once: (t: string, cb: (ev: MessageEvent) => any) => void }).once(
+          'message',
+          (ev: MessageEvent | any) => {
+            if (!ev || !ev.id || ev.id !== id) {
+              return;
+            }
+            resolve(ev);
+          }
+        );
+      } else {
+        ep.addEventListener('message', function l(ev: MessageEvent) {
+          if (!ev.data || !ev.data.id || ev.data.id !== id) {
+            return;
+          }
+          ep.removeEventListener('message', l as EventListenerOrEventListenerObject);
+          resolve(ev.data);
+        } as EventListenerOrEventListenerObject);
+      }
       if (ep.start) {
         ep.start();
       }

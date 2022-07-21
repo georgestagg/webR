@@ -20,12 +20,13 @@ RUN mkdir -p /webr-tools && \
     cd /webr-tools && \
     git clone --depth=1 https://github.com/emscripten-core/emsdk.git && \
     cd emsdk && \
-    ./emsdk install "3.1.1" && \
-    ./emsdk activate "3.1.1"
+    ./emsdk install "3.1.14" && \
+    ./emsdk activate "3.1.14"
 
 RUN ln -s /usr/bin/gfortran-4.6 /usr/bin/gfortran
 
-ENV PATH="/app/bin:/webr-tools/emsdk:/webr-tools/emsdk/node/12.9.1_64bit/bin:/webr-tools/emsdk/upstream/emscripten:${PATH}"
+ENV PATH="/app/bin:${PATH}"
 ENV LIBRARY_PATH="/app/lib:${LIBRARY_PATH}"
 
-CMD cd /app && make webr
+SHELL ["/bin/bash", "-c"]
+CMD source /webr-tools/emsdk/emsdk_env.sh && cd /app && make webr

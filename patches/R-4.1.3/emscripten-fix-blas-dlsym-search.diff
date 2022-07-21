@@ -1,7 +1,7 @@
-Index: R-4.1.3_quilt/src/main/platform.c
+Index: R-4.1.3/src/main/platform.c
 ===================================================================
---- R-4.1.3_quilt.orig/src/main/platform.c
-+++ R-4.1.3_quilt/src/main/platform.c
+--- R-4.1.3.orig/src/main/platform.c
++++ R-4.1.3/src/main/platform.c
 @@ -3377,11 +3377,16 @@ do_eSoftVersion(SEXP call, SEXP op, SEXP
         and heuristics, and depends on implementation details
         of dynamic linkers.

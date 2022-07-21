@@ -33,6 +33,11 @@ docker-container-%:
 	docker build -t webr-build .
 	docker run -dit --name $* --mount type=bind,source=$(PWD),target=/app webr-build bash
 
+.PHONY: check
+check:
+	cd R && $(MAKE) install-tests
+	cd tests && $(MAKE) test-all
+
 .PHONY: clean
 clean: clean-webr
 	cd tools/dragonegg && $(MAKE) clean

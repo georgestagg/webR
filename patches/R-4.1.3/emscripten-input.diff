@@ -2,7 +2,7 @@ Index: R-4.1.3/src/main/main.c
 ===================================================================
 --- R-4.1.3.orig/src/main/main.c
 +++ R-4.1.3/src/main/main.c
-@@ -1118,12 +1118,14 @@ extern SA_TYPE SaveAction; /* from src/m
+@@ -1112,12 +1112,14 @@ extern SA_TYPE SaveAction; /* from src/m
  
  static void end_Rmainloop(void)
  {

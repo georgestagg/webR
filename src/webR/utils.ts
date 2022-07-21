@@ -22,6 +22,7 @@ export type XHRResponse = {
 };
 
 export interface Module extends EmscriptenModule {
+  FS: any;
   ENV: { [key: string]: string };
   monitorRunDependencies: (n: number) => void;
   noImageDecoding: boolean;
@@ -30,6 +31,14 @@ export interface Module extends EmscriptenModule {
   canvasExec: (op: string) => void;
   downloadFileContent: (URL: string, headers: Array<string>) => XHRResponse;
   _evalRCode: (code: RPtr, env: RPtr, errPtr: RPtr) => RPtr;
+  // Exported Emscripten JS API
+  allocate: (
+    slab: number | ArrayBufferView | number[],
+    types: Emscripten.CType | Emscripten.CType[],
+    allocator: number,
+    ptr?: number | undefined
+  ) => number;
+  allocateUTF8: (str: string) => number;
   // Utility functions from Rinternals.h
   _Rf_ScalarReal: (n: number) => RPtr;
   _Rf_ScalarLogical: (l: boolean) => RPtr;
@@ -71,6 +80,7 @@ export interface Module extends EmscriptenModule {
   webr: {
     readConsole: () => number;
     resolveInit: () => void;
+    exit: () => void;
   };
 }
 

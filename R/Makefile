@@ -113,6 +113,7 @@ STAGE2_LDFLAGS += -L$(WASM)/lib
 MAIN_LDFLAGS  = -s WASM_BIGINT -s WASM=1 -s ALLOW_MEMORY_GROWTH=1
 MAIN_LDFLAGS += -s MAIN_MODULE=1 -s FETCH=1 -s NO_EXIT_RUNTIME=0
 MAIN_LDFLAGS += -s ERROR_ON_UNDEFINED_SYMBOLS=0
+MAIN_LDFLAGS += -s EXPORTED_RUNTIME_METHODS=['allocate','allocateUTF8']
 MAIN_LDFLAGS += --extern-pre-js $(WEBR_ROOT)/src/webR/pre.js
 MAIN_LDFLAGS += $(FORTRAN_WASM_LDADD)
 MAIN_LDFLAGS += $(WASM_OPT_LDADD)
@@ -178,6 +179,13 @@ $(BUILD)/state/r-stage2: $(BUILD)/state/r-stage1 $(BUILD)/state/r-stage2-configu
 Rprofile: $(BUILD)/state/r-stage2
 	mkdir -p "$(R_WASM)/lib/R/etc/"
 	echo "options(expressions=400)" > "$(R_WASM)/lib/R/etc/Rprofile.site"
+
+.PHONY: install-tests
+install-tests: $(BUILD)/state/r-stage2
+	cd $(R_SOURCE)/build && \
+		$(MAKE_WASM_BUILD) docs && \
+		$(MAKE_WASM_INSTALL) install-tests
+	$(MAKE) install
 
 .PHONY: install
 install: $(BUILD)/state/r-stage2 Rprofile

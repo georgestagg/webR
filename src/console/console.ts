@@ -2,6 +2,7 @@ import { WebR } from '../webR/webr-main';
 
 (async () => {
   const webR = new WebR();
+  (globalThis as any).webR = webR;
 
   for (;;) {
     const output = await webR.read();

@@ -32,6 +32,11 @@ function build({ input, output, minify }) {
     minify: false,
   },
   {
+    input: "webR/webr-main.ts",
+    output: "webr.js",
+    minify: false,
+  },
+  {
     input: "repl/repl.ts",
     output: "../dist/repl.js",
     minify: true,

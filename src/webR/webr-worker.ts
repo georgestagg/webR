@@ -4,20 +4,31 @@ import { ChannelWorker } from './chan/channel';
 import { Message, Request, newResponse } from './chan/message';
 import { FSNode, WebROptions, Module, XHRResponse } from './utils';
 import { RawTypes, RSexp, RTargetObj, RTargetType, RRawObj, RSexpPtr, SexpType } from './sexp';
+import { IN_NODE } from './compat';
 
 let initialised = false;
 
-self.onmessage = function (ev: MessageEvent) {
-  if (!ev || !ev.data || !ev.data.type || ev.data.type !== 'init') {
+const onmessage = function (ev: MessageEvent) {
+  let msg = ev.data as Message;
+  if (IN_NODE) {
+    msg = ev;
+  }
+  if (!msg || !msg.data || !msg.type || msg.type !== 'init') {
     return;
   }
   if (initialised) {
     throw new Error("Can't initialise worker multiple times.");
   }
 
-  init(ev.data as WebROptions);
+  init(msg.data as WebROptions);
   initialised = true;
 };
+
+if (IN_NODE) {
+  require('worker_threads').parentPort.on('message', onmessage);
+} else {
+  globalThis.onmessage = onmessage;
+}
 
 const defaultEnv = {
   R_HOME: '/usr/lib/R',
@@ -195,8 +206,8 @@ function setRObj(root: RSexp, path: string[], value: RSexp) {
 }
 
 function evalRCode(code: string, env: RTargetObj | undefined): RSexpPtr {
-  const str = allocateUTF8(code);
-  const err = allocate(1, 'i32', 0);
+  const str = Module.allocateUTF8(code);
+  const err = Module.allocate(1, 'i32', 0);
 
   let envObj = RSexp.wrap(RSexp.R_GlobalEnv);
   if (env && env.type === RTargetType.CODE) {
@@ -309,6 +320,11 @@ function init(options: WebROptions = {}) {
   Module.noAudioDecoding = true;
 
   Module.preRun.push(() => {
+    if (IN_NODE) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      globalThis.FS = Module.FS;
+    }
+
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore: next-line
     FS.mkdirTree(_config.homedir);
@@ -324,10 +340,14 @@ function init(options: WebROptions = {}) {
       chan.resolve();
     },
 
+    exit: () => {
+      chan.write({ type: 'exit' });
+    },
+
     // C code must call `free()` on the result
     readConsole: () => {
       const input = inputOrDispatch(chan);
-      return allocateUTF8(input);
+      return Module.allocateUTF8(input);
     },
   };
 

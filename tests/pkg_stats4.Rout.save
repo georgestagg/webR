@@ -1,0 +1,4 @@
+Testing examples for package ‘stats4’
+  comparing ‘stats4-Ex.Rout’ to ‘stats4-Ex.Rout.save’ ... OK
+Running specific tests for package ‘stats4’
+  Running ‘confint.R’
