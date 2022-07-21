@@ -26,6 +26,12 @@ export class WebR {
     this.write({ type: 'stdin', data: input });
   }
 
+  async installPackages(packages: string[]) {
+    for (const pkg of packages) {
+      const msg = { type: 'installPackage', data: { name: pkg } };
+      await this.#chan.request(msg);
+    }
+  }
   async putFileData(name: string, data: Uint8Array) {
     const msg = { type: 'putFileData', data: { name: name, data: data } };
     await this.#chan.request(msg);

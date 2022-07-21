@@ -1,5 +1,6 @@
 import { initFSTree, FSTreeInterface, JSTreeNode, FSNode } from './fstree';
 import { WebR } from '../webR/webr-main';
+import { PKG_BASE_URL } from '../webR/config';
 
 import $ from 'jquery';
 import 'jquery.terminal/css/jquery.terminal.css';
@@ -18,7 +19,15 @@ let FSTree: FSTreeInterface;
 const term = $('#term').terminal(
   (command) => {
     term.pause();
-    webR.writeConsole(command + '\n');
+    const reg = /(library|require)\(['"]?(.*?)['"]?\)/g;
+    let res;
+    const packages = [];
+    while ((res = reg.exec(command)) !== null) {
+      packages.push(res[2]);
+    }
+    webR.installPackages(packages).then((_) => {
+      webR.writeConsole(command + '\n');
+    });
   },
   {
     prompt: '',
@@ -53,6 +62,53 @@ function FSTreeData(
     });
   }
 }
+
+const preamble = `
+webr_install <- function(packages, repos = "${PKG_BASE_URL}", lib = NULL) {
+  if (is.null(lib)) {
+    lib <- .libPaths()[[1]]
+  }
+  info <- available.packages(repos = repos, type = "source")
+  deps <- unlist(tools::package_dependencies(packages, info), use.names = FALSE)
+  deps <- unique(deps)
+
+  for (dep in deps) {
+    if (length(find.package(dep, quiet=TRUE))) {
+      next
+    }
+    webr_install(dep)
+  }
+
+  for (pkg in packages) {
+    if (length(find.package(pkg, quiet=TRUE))) {
+      next
+    }
+
+    ver <- as.character(getRversion())
+    ver <- gsub("\\\\.[^.]+$", "", ver)
+    bin_suffix <- sprintf("bin/emscripten/contrib/%s", ver)
+
+    repo <- info[pkg, "Repository"]
+    repo <- sub("src/contrib", bin_suffix, repo, fixed = TRUE)
+    repo <- sub("file:", "", repo, fixed = TRUE)
+
+    pkg_ver <- info[pkg, "Version"]
+    path <- file.path(repo, paste0(pkg, "_", pkg_ver, ".tgz"))
+
+    tmp <- tempfile()
+    message(paste("Downloading webR package:", pkg))
+    download.file(path, tmp, quiet = TRUE)
+
+    untar(
+      tmp,
+      exdir = lib,
+      tar = "internal",
+      extras = "--no-same-permissions"
+    )
+  }
+  invisible(NULL)
+}
+`;
 
 const webR = new WebR({
   RArgs: [],
@@ -146,6 +202,8 @@ const webR = new WebR({
       link.remove();
     });
 
+  webR.writeConsole(preamble);
+
   for (;;) {
     const output = await webR.read();
 
@@ -160,10 +218,6 @@ const webR = new WebR({
         term.set_prompt(output.data as string);
         FSTree.refresh();
         term.resume();
-        break;
-      case 'packageLoading':
-        console.log(`Loading package: ${output.data as string}`);
-        FSTree.refresh();
         break;
       case 'canvasExec':
         // eslint-disable-next-line @typescript-eslint/no-implied-eval

@@ -76,6 +76,9 @@ function inputOrDispatch(chan: ChannelWorker): string {
           case 'getFSNode':
             write(getFSNode(reqMsg.data.path as string));
             continue;
+          case 'installPackage':
+            write(evalRCode(`webr_install("${reqMsg.data.name as string}")`));
+            continue;
           case 'getRObj': {
             const data = reqMsg.data as {
               target: RTargetObj;
@@ -205,7 +208,7 @@ function setRObj(root: RSexp, path: string[], value: RSexp) {
   }
 }
 
-function evalRCode(code: string, env: RTargetObj | undefined): RSexpPtr {
+function evalRCode(code: string, env?: RTargetObj | undefined): RSexpPtr {
   const str = Module.allocateUTF8(code);
   const err = Module.allocate(1, 'i32', 0);
 

@@ -1,2 +1,2 @@
 export const BASE_URL = '@@BASE_URL@@';
-export const PKG_BASE_URL = 'https://cdn.jsdelivr.net/gh/georgestagg/webr-ports/dist/';
+export const PKG_BASE_URL = 'https://webr.gwstagg.co.uk/repo/';
