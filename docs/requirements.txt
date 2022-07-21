@@ -1,0 +1,3 @@
+pydata-sphinx-theme>=0.8.1
+sphinx-book-theme>=0.3.3
+sphinxcontrib-jsmath>=1.0.1
