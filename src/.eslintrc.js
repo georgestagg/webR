@@ -18,14 +18,19 @@ module.exports = {
       tsconfigRootDir: __dirname,
       project: ['./tsconfig.json'],
   },
+  ignorePatterns: ['.eslintrc.js', 'pre.js', 'esbuild.js'],
   plugins: ['@typescript-eslint'],
   rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-floating-promises": "off",
-      "require-jsdoc": "off",
-      'prettier/prettier': [
-        'error',
-        { singleQuote: true, 'printWidth': 100},
-      ]
+    "@typescript-eslint/no-explicit-any": "off",
+     "@typescript-eslint/no-unsafe-member-access": "off",
+     "@typescript-eslint/no-unsafe-call": "off",
+     "@typescript-eslint/require-await": "off",
+     "@typescript-eslint/no-floating-promises": "off",
+     "@typescript-eslint/no-unused-vars": "off",
+     "require-jsdoc": "off",
+     'prettier/prettier': [
+       'error',
+       { singleQuote: true, 'printWidth': 100},
+     ]
   }
 };

@@ -1,58 +1,22 @@
 import { BASE_URL, PKG_BASE_URL } from './config';
 import { loadScript } from './compat';
 import { ChannelWorker } from './chan/channel';
-import { Message,
-         Request,
-         newResponse } from './chan/message';
-import { FSNode,
-         WebROptions } from './webr-main'
-
+import { Message, Request, newResponse } from './chan/message';
+import { FSNode, WebROptions, Module, XHRResponse } from './utils';
+import { RawTypes, RSexp, RTargetObj, RTargetType, RRawObj, RSexpPtr, SexpType } from './sexp';
 
 let initialised = false;
 
-self.onmessage = function(ev: MessageEvent) {
-  if (!ev || !ev.data || !ev.data.type || ev.data.type != 'init') {
+self.onmessage = function (ev: MessageEvent) {
+  if (!ev || !ev.data || !ev.data.type || ev.data.type !== 'init') {
     return;
   }
   if (initialised) {
-    throw `Can't initialise worker multiple times.`;
+    throw new Error("Can't initialise worker multiple times.");
   }
 
-  init(ev.data);
+  init(ev.data as WebROptions);
   initialised = true;
-}
-
-
-interface Module extends EmscriptenModule {
-  FS: any;
-  ENV: { [key: string]: string };
-  monitorRunDependencies: (n: number) => void;
-  noImageDecoding: boolean;
-  noAudioDecoding: boolean;
-  setPrompt: (prompt: string) => void;
-  canvasExec: (op: string) => void;
-  downloadFileContent: (URL: string, headers: Array<string>) => XHRResponse;
-  _runRCode: (code: number, length: number) => Promise<string>;
-  allocate(slab: number[] | ArrayBufferView | number, allocator: number): number;
-  intArrayFromString(stringy: string, dontAddNull?: boolean, length?: number): number[];
-  // TODO: Namespace all webR properties
-  webr: {
-    readConsole: () => number;
-    resolveInit: () => void;
-  };
-}
-
-type WebRConfig = {
-  RArgs: string[];
-  REnv: { [key: string]: string };
-  WEBR_URL: string;
-  PKG_URL: string;
-  homedir: string;
-};
-
-type XHRResponse = {
-  status: number;
-  response: string | ArrayBuffer;
 };
 
 const defaultEnv = {
@@ -69,49 +33,213 @@ const defaultOptions = {
 };
 
 const Module = {} as Module;
-let _config: WebRConfig;
+let _config: Required<WebROptions>;
 
 function inputOrDispatch(chan: ChannelWorker): string {
-  while (true) {
+  for (;;) {
     // This blocks the thread until a response
-    let msg: Message = chan.read();
+    const msg: Message = chan.read();
 
     switch (msg.type) {
       case 'stdin':
-        return msg.data;
+        return msg.data as string;
 
-      case 'request':
-        let req = msg as unknown as Request;
-        let reqMsg = req.data.msg;
+      case 'request': {
+        const req = msg as Request;
+        const reqMsg = req.data.msg;
 
-        let write = (resp: any, transferables?: [Transferable]) =>
+        const write = (resp: any, transferables?: [Transferable]) =>
           chan.write(newResponse(req.data.uuid, resp, transferables));
         switch (reqMsg.type) {
-          case 'putFileData':
+          case 'putFileData': {
             // FIXME: Use a replacer + reviver to transfer Uint8Array
-            let data = Uint8Array.from(Object.values(reqMsg.data.data));
-            write(putFileData(reqMsg.data.name, data))
+            const data = Uint8Array.from(Object.values(reqMsg.data.data as ArrayLike<number>));
+            write(putFileData(reqMsg.data.name as string, data));
             continue;
-          case 'getFileData':
-            let out = getFileData(reqMsg.data.name);
+          }
+          case 'getFileData': {
+            const out = getFileData(reqMsg.data.name as string);
             write(out, [out.buffer]);
             continue;
+          }
           case 'getFSNode':
-            write(getFSNode(reqMsg.data.path));
+            write(getFSNode(reqMsg.data.path as string));
             continue;
+          case 'getRObj': {
+            const data = reqMsg.data as {
+              target: RTargetObj;
+              path: string[];
+              args: RTargetObj[];
+            };
+            write(getRObj(wrapRTargetObj(data.target), data.path, data.args));
+            continue;
+          }
+          case 'setRObj': {
+            const data = reqMsg.data as {
+              target: RTargetObj;
+              path: string[];
+              value: RTargetObj;
+            };
+            write(setRObj(wrapRTargetObj(data.target), data.path, wrapRTargetObj(data.value)));
+            continue;
+          }
           default:
-            throw('Unknown event `' + reqMsg.type + '`');
+            throw new Error('Unknown event `' + reqMsg.type + '`');
         }
+      }
 
       default:
-        throw('Unknown event `' + msg.type + '`');
+        throw new Error('Unknown event `' + msg.type + '`');
     }
   }
 }
 
+function isRSexp(value: any): value is RSexp {
+  return typeof value === 'object' && 'convertImplicitly' in value && 'type' in value;
+}
+
+/**
+ * Given a root RSexp object, return the result of walking the given path of
+ * properties, optionally calling a function at the end of the path.
+ *
+ * Returns a RTargetObj containing either a reference to the resulting SEXP
+ * object in WASM memory, or the object represented in an equivalent raw
+ * JS form.
+ *
+ * @param {RSexp}  root The root R RSexp object
+ * @param {string[]} [path] List of properties to iteratively navigate
+ * @param {RTargetObj[]} [args] List of arguments to call with
+ * @return {RTargetObj} The resulting R object
+ */
+function getRObj(root: RSexp, path: string[], args?: RTargetObj[]): RTargetObj {
+  const getProp = (obj: RSexp, prop: string) => {
+    if (!isNaN(Number(prop))) {
+      return obj.getIdx(Number(prop));
+    } else if (prop.startsWith('$')) {
+      prop = prop.slice(1);
+      if (prop === '') return undefined;
+      return obj.getDollar(prop);
+    }
+    // @ts-expect-error ts(7053)
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return obj[prop];
+  };
+
+  let ret: RSexpPtr | RRawObj = { obj: undefined, type: RTargetType.RAW };
+  try {
+    // Navigate the property array and grab the requested RSexp objects
+    let res = path.reduce(getProp, root) as RawTypes | RSexp | Function;
+    const parent = path.slice(0, -1).reduce(getProp, root) as RawTypes | RSexp;
+
+    // If requested, call the resulting object with the provided arguments
+    if (typeof res === 'function' && args) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      res = res.apply(parent, args);
+    } else if (isRSexp(res) && args) {
+      res = res._call.call(
+        parent,
+        Array.from({ length: args.length }, (_, idx) => wrapRTargetObj(args[idx]))
+      );
+    }
+
+    // Return a RSexpPtr reference, or otherwise a raw JS object where
+    // implicit conversion is enabled
+    if (isRSexp(res) && res.convertImplicitly) {
+      ret = { obj: res.toJs(), type: RTargetType.RAW };
+    } else if (isRSexp(res)) {
+      ret = { obj: res.ptr, type: RTargetType.SEXPPTR };
+    } else if (!(typeof res === 'function')) {
+      ret = { obj: res, type: RTargetType.RAW };
+    } else {
+      throw Error('Resulting object cannot be transferred to main thread');
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      console.error(e);
+    }
+  }
+  return ret;
+}
+
+/**
+ * Given a root RSexp object, walk the given path of properties and set
+ * the value of the result, if possible.
+ *
+ * @param {RSexp}  root The root R RSexp object
+ * @param {string[]} [path] List of properties to iteratively navigate
+ * @param {RSexp} [value] The R RSexp object to set the value to
+ */
+function setRObj(root: RSexp, path: string[], value: RSexp) {
+  const getProp = (obj: RSexp, prop: string) => {
+    if (!isNaN(Number(prop))) {
+      return obj.getIdx(Number(prop));
+    } else if (prop.startsWith('$')) {
+      prop = prop.slice(1);
+      return obj.getDollar(prop);
+    }
+    // @ts-expect-error ts(7053)
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return obj[prop];
+  };
+
+  try {
+    const parent = path.slice(0, -1).reduce(getProp, root);
+    let prop = path[path.length - 1];
+    if (prop.startsWith('$')) {
+      prop = prop.slice(1);
+    }
+    parent._set(prop, value);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function evalRCode(code: string, env: RTargetObj | undefined): RSexpPtr {
+  const str = allocateUTF8(code);
+  const err = allocate(1, 'i32', 0);
+
+  let envObj = RSexp.wrap(RSexp.R_GlobalEnv);
+  if (env && env.type === RTargetType.CODE) {
+    envObj = wrapRTargetObj(env);
+  } else if (env && env.type === RTargetType.SEXPPTR) {
+    envObj = RSexp.wrap(env.obj);
+  } else if (env) {
+    throw new Error('Attempted to eval R code with an invalid raw env argument');
+  }
+  if (envObj.type !== SexpType.ENVSXP) {
+    throw new Error('Attempted to eval R code with an env argument with invalid SEXP type');
+  }
+  const resultPtr = Module._evalRCode(str, envObj.ptr, err);
+  const errValue = getValue(err, 'i32');
+  if (errValue) {
+    throw Error(`An error occured evaluating R code (${errValue})`);
+  }
+  Module._free(str);
+  Module._free(err);
+  return { obj: resultPtr, type: RTargetType.SEXPPTR };
+}
+
+function wrapRTargetObj(target: RTargetObj): RSexp {
+  try {
+    if (target.type === RTargetType.SEXPPTR) {
+      return RSexp.wrap(target.obj);
+    } else if (target.type === RTargetType.CODE) {
+      const res: RSexpPtr = evalRCode(target.obj.code, target.obj.env);
+      return RSexp.wrap(res.obj);
+    } else if (target.type === RTargetType.RAW) {
+      return new RSexp(target);
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      console.error(e);
+    }
+  }
+  return RSexp.wrap(RSexp.R_NilValue);
+}
+
 function getFSNode(path: string): FSNode {
-  const node = Module.FS.lookupPath(path).node;
-  return copyFSNode(node);
+  const node = FS.lookupPath(path, {}).node;
+  return copyFSNode(node as FSNode);
 }
 
 function copyFSNode(obj: FSNode): FSNode {
@@ -159,8 +287,7 @@ function downloadFileContent(URL: string, headers: Array<string> = []): XHRRespo
 }
 
 function getFileData(name: string): Uint8Array {
-  const FS = Module.FS;
-  const size = FS.stat(name).size;
+  const size = FS.stat(name).size as number;
   const stream = FS.open(name, 'r');
   const buf = new Uint8Array(size);
   FS.read(stream, buf, 0, size, 0);
@@ -169,7 +296,7 @@ function getFileData(name: string): Uint8Array {
 }
 
 function putFileData(name: string, data: Uint8Array) {
-  Module.FS.createDataFile('/', name, data, true, true, true);
+  FS.createDataFile('/', name, data, true, true, true);
 }
 
 function init(options: WebROptions = {}) {
@@ -182,13 +309,15 @@ function init(options: WebROptions = {}) {
   Module.noAudioDecoding = true;
 
   Module.preRun.push(() => {
-    Module.FS.mkdirTree(_config.homedir);
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore: next-line
+    FS.mkdirTree(_config.homedir);
+    FS.chdir(_config.homedir);
     Module.ENV.HOME = _config.homedir;
-    Module.FS.chdir(_config.homedir);
     Module.ENV = Object.assign(Module.ENV, _config.REnv);
   });
 
-  let chan = new ChannelWorker();
+  const chan = new ChannelWorker();
 
   Module.webr = {
     resolveInit: () => {
@@ -197,10 +326,10 @@ function init(options: WebROptions = {}) {
 
     // C code must call `free()` on the result
     readConsole: () => {
-      let input = inputOrDispatch(chan);
-      return allocUTF8(input);
-    }
-  }
+      const input = inputOrDispatch(chan);
+      return allocateUTF8(input);
+    },
+  };
 
   Module.locateFile = (path: string) => _config.WEBR_URL + path;
   Module.downloadFileContent = downloadFileContent;
@@ -208,7 +337,7 @@ function init(options: WebROptions = {}) {
   Module.print = (text: string) => {
     chan.write({ type: 'stdout', data: text });
   };
-  Module.printErr = async (text: string) => {
+  Module.printErr = (text: string) => {
     chan.write({ type: 'stderr', data: text });
   };
   Module.setPrompt = (prompt: string) => {
@@ -218,7 +347,6 @@ function init(options: WebROptions = {}) {
     chan.write({ type: 'canvasExec', data: op });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   (globalThis as any).Module = Module;
 
   // At the next tick, launch the REPL. This never returns.
@@ -226,11 +354,4 @@ function init(options: WebROptions = {}) {
     const scriptSrc = `${_config.WEBR_URL}R.bin.js`;
     loadScript(scriptSrc);
   });
-}
-
-function allocUTF8(x: string) {
-  let nBytes = lengthBytesUTF8(x) + 1;
-  let out = Module._malloc(nBytes);
-  stringToUTF8(x, out, nBytes);
-  return out;
 }

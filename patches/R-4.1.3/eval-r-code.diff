@@ -1,0 +1,44 @@
+Index: R-4.1.3/src/main/main.c
+===================================================================
+--- R-4.1.3.orig/src/main/main.c
++++ R-4.1.3/src/main/main.c
+@@ -1145,6 +1145,39 @@ void mainloop(void)
+     run_Rmainloop();
+ }
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#include <emscripten/fetch.h>
++SEXP EMSCRIPTEN_KEEPALIVE evalRCode(const char *evalString, SEXP rho, int *error) {
++    SEXP evalSEXP, exprSEXP;
++    SEXP resultSEXP = R_NilValue;
++    ParseStatus status;
++    *error = 0;
++
++    // Parse the given string into an R expression
++    PROTECT(evalSEXP = allocVector(STRSXP, 1));
++    SET_STRING_ELT(evalSEXP, 0, mkChar(evalString));
++    exprSEXP = PROTECT(R_ParseVector(evalSEXP, -1, &status, R_NilValue));
++
++    if (status != PARSE_OK) {
++        UNPROTECT(2);
++        *error = -1;
++        return R_NilValue;
++    }
++
++    // Evaluate the resulting R expression
++    for(int i=0; i<length(exprSEXP); i++) {
++        resultSEXP = R_tryEval(VECTOR_ELT(exprSEXP, i), rho, error);
++        if (*error) {
++            UNPROTECT(2);
++            return R_NilValue;
++        }
++    }
++    UNPROTECT(2);
++    return resultSEXP;
++}
++#endif
++
+ /*this functionality now appears in 3
+   places-jump_to_toplevel/profile/here */
+ 

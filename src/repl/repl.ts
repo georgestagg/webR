@@ -49,9 +49,6 @@ function FSTreeData(
     webR.getFSNode('/').then((node: FSNode) => {
       const jsTreeNode = FSTree.createJSTreeNodefromFSNode(node);
       jsTreeNode.parents = [];
-      jsTreeNode.state = Object.assign(jsTreeNode.state, {
-        selected: true,
-      });
       cb.call(FSTree, jsTreeNode);
     });
   }
@@ -66,6 +63,7 @@ const webR = new WebR({
     COLORTERM: 'truecolor',
   },
 });
+(globalThis as any).webR = webR;
 
 (async () => {
   await webR.init();
@@ -156,20 +154,22 @@ const webR = new WebR({
         term.echo(output.data, { exec: false });
         break;
       case 'stderr':
-        term.error(output.data);
+        term.error(output.data as string);
         break;
       case 'prompt':
-        term.set_prompt(output.data);
+        term.set_prompt(output.data as string);
         FSTree.refresh();
         term.resume();
         break;
       case 'packageLoading':
-        console.log(`Loading package: ${output.data}`);
+        console.log(`Loading package: ${output.data as string}`);
         FSTree.refresh();
         break;
       case 'canvasExec':
         // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        Function(`document.getElementById('plot-canvas').getContext('2d').${output.data}`)();
+        Function(`
+          document.getElementById('plot-canvas').getContext('2d').${output.data as string}
+        `)();
         break;
       default:
         console.error(`Unimplemented output type: ${output.type}`);

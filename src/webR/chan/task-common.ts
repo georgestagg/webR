@@ -10,11 +10,7 @@ export interface Endpoint extends EventSource {
 }
 
 export interface EventSource {
-  addEventListener(
-    type: string,
-    listener: EventListenerOrEventListenerObject,
-    options?: {}
-  ): void;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: {}): void;
 
   removeEventListener(
     type: string,
@@ -24,10 +20,7 @@ export interface EventSource {
 }
 
 export function toWireValue(value: any): [any, Transferable[]] {
-  return [
-    value,
-    transferCache.get(value) || [],
-  ]
+  return [value, transferCache.get(value) || []];
 }
 
 const transferCache = new WeakMap<any, Transferable[]>();
@@ -36,24 +29,23 @@ export function transfer<T>(obj: T, transfers: Transferable[]): T {
   return obj;
 }
 
-
 export type UUID = string;
 
-export let UUID_LENGTH = 63;
+export const UUID_LENGTH = 63;
 
 export function generateUUID(): UUID {
-  let result = Array.from({ length: 4 }, randomSegment).join("-");
+  const result = Array.from({ length: 4 }, randomSegment).join('-');
   if (result.length !== UUID_LENGTH) {
-    throw new Error("comlink internal error: UUID has the wrong length");
+    throw new Error('comlink internal error: UUID has the wrong length');
   }
   return result;
 }
 
 function randomSegment() {
   let result = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(16);
-  let pad = 15 - result.length;
+  const pad = 15 - result.length;
   if (pad > 0) {
-    result = Array.from({ length: pad }, (_) => 0).join("") + result;
+    result = Array.from({ length: pad }, () => 0).join('') + result;
   }
   return result;
 }

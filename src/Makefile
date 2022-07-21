@@ -7,7 +7,7 @@ HTML_TEMPLATES = console.html repl.html
 ENTRY_POINTS = console/console.ts repl/repl.ts webR/webr-worker.ts
 HTML_INDEX = repl.html
 
-TS_SOURCES = $(shell ls **/*.ts)
+TS_SOURCES = $(shell find . -name '*.ts' -not -path './node_modules/*')
 
 # Configure your local environment in this file
 -include ~/.webr-config.mk
@@ -30,6 +30,7 @@ webR/config.ts: webR/config.ts.in
 .PHONY: check
 check:
 	npx tsc
+	npx eslint $(TS_SOURCES)
 
 node_modules: package.json
 	npm ci
