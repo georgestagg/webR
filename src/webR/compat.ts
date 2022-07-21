@@ -24,7 +24,16 @@ if (globalThis.document) {
 } else if (globalThis.importScripts) {
   loadScript = async (url) => {
     try {
-      globalThis.importScripts(url);
+      if (url.startsWith('http')) {
+        const req = new XMLHttpRequest();
+        req.open('get', url, true);
+        req.onload = function () {
+          globalThis.importScripts(URL.createObjectURL(new Blob([req.responseText])));
+        };
+        req.send();
+      } else {
+        globalThis.importScripts(url);
+      }
     } catch (e) {
       if (e instanceof TypeError) {
         await import(url);
